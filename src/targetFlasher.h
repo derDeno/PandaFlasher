@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include "esp_loader.h"
 #include "pinControl.h"
 
@@ -9,6 +11,19 @@ extern HardwareSerial TargetSerial;
 
 namespace targetPort {
 static uint32_t deadline;
+static File *flashLog = nullptr;
+static bool flashLogFailed = false;
+
+static void log(esp_loader_port_t *, esp_loader_log_level_t level, const char *format, va_list args) {
+    if (!flashLog) return;
+    char message[160];
+    vsnprintf(message, sizeof(message), format, args);
+    const char *label = level == ESP_LOADER_LOG_ERROR ? "ERROR" : level == ESP_LOADER_LOG_WARN ? "WARN" : "INFO";
+    if (!flashLog->printf("[%s] %s\n", label, message)) {
+        flashLogFailed = true;
+        flashLog = nullptr;
+    }
+}
 
 static void enterBootloader(esp_loader_port_t *) {
     while (TargetSerial.available()) TargetSerial.read();
@@ -45,7 +60,7 @@ static esp_loader_error_t read(esp_loader_port_t *, uint8_t *data, uint16_t size
 
 static const esp_loader_port_ops_t ops = {
     nullptr, nullptr, enterBootloader, reset, startTimer, remaining, wait,
-    nullptr, nullptr, changeRate, write, read,
+    log, nullptr, changeRate, write, read,
     nullptr, nullptr, nullptr, nullptr
 };
 }

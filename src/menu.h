@@ -246,6 +246,10 @@ void drawFlashProgress(uint32_t written, uint32_t total) {
     static uint8_t lastPercent = 255;
     if (percent == lastPercent && written != 0) return;
     lastPercent = percent;
+    if (targetPort::flashLog && !targetPort::flashLog->printf("Progress: %u%%\n", percent)) {
+        targetPort::flashLogFailed = true;
+        targetPort::flashLog = nullptr;
+    }
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Flashing target");
@@ -281,6 +285,14 @@ void confirmFlash() {
     if (digitalRead(JOY_CENTER) != LOW) return;
     delay(200);
 
+    File flashLog = SD.open("/flash-log.txt", FILE_APPEND);
+    targetPort::flashLogFailed = !flashLog;
+    targetPort::flashLog = flashLog ? &flashLog : nullptr;
+    if (targetPort::flashLog && !flashLog.printf("\n--- Flash %s at 0x%lx ---\n", sdFiles[selectedFile].c_str(), static_cast<unsigned long>(flashOffset))) {
+        targetPort::flashLogFailed = true;
+        targetPort::flashLog = nullptr;
+    }
+
     File file = SD.open("/" + sdFiles[selectedFile], FILE_READ);
     if (!file || !file.size() || file.read() != 0xE9) {
         resultText = "Invalid ESP .bin";
@@ -297,6 +309,10 @@ void confirmFlash() {
         resultText = err == ESP_LOADER_SUCCESS ? "Flash verified!" : "Flash failed:\n" + String(targetErrorName(err));
         flasher.close();
     }
+    if (targetPort::flashLog && !flashLog.println(resultText)) targetPort::flashLogFailed = true;
+    targetPort::flashLog = nullptr;
+    if (flashLog) flashLog.close();
+    if (targetPort::flashLogFailed) resultText += "\nLog unavailable";
     file.close();
     currentMenu = 7;
 }
