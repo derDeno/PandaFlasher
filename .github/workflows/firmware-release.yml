@@ -37,8 +37,9 @@ jobs:
           python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}-esp32s3-n8r8.bin" \
             0x0 .pio/build/HW-2_0/bootloader.bin \
             0x8000 .pio/build/HW-2_0/partitions.bin \
+            0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
             0x10000 .pio/build/HW-2_0/firmware.bin \
-            0x5F0000 .pio/build/HW-2_0/spiffs.bin
+            0x5F0000 .pio/build/HW-2_0/littlefs.bin
 
       - name: Add image to draft release
         env:
