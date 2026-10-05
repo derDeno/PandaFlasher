@@ -1,0 +1,53 @@
+name: Build firmware release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged && github.event.pull_request.head.ref == 'dev' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read firmware version
+        id: version
+        run: |
+          version=$(sed -nE 's/^#define SOFTWARE_VERSION "(v[0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' src/config.h)
+          test -n "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install build tools
+        run: python -m pip install platformio esptool
+
+      - name: Build firmware and filesystem
+        run: |
+          pio run -e HW-2_0
+          pio run -e HW-2_0 -t buildfs
+
+      - name: Combine flash image
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}-esp32s3-n8r8.bin" \
+            0x0 .pio/build/HW-2_0/bootloader.bin \
+            0x8000 .pio/build/HW-2_0/partitions.bin \
+            0x10000 .pio/build/HW-2_0/firmware.bin \
+            0x5F0000 .pio/build/HW-2_0/spiffs.bin
+
+      - name: Add image to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "$VERSION" --json isDraft --jq '.isDraft' > draft.txt 2>/dev/null; then
+            test "$(cat draft.txt)" = true || { echo "Release $VERSION is already published" >&2; exit 1; }
+          else
+            gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "$VERSION"
+          fi
+          gh release upload "$VERSION" "PandaFlasher-${VERSION}-esp32s3-n8r8.bin" --clobber
