@@ -1,42 +1,24 @@
-> [!CAUTION]
-> Currently the code is in the early-dev branch, because the project hasn't reached the final release milestone yet.
-> If you want to try the code, please use it with caution!
+# PandaFlasher firmware
 
+PandaFlasher is firmware for an ESP32-S3 handheld programmer. It uses an OLED screen, joystick, back button, and SD card to flash another ESP chip over UART without a computer. This firmware is configured for PandaFlasher hardware revision 2.0.
 
-# PandaFlasher
-PandaFlasher is a standalone, ESP32-S3–based device designed to flash, debug, and monitor custom microcontroller boards — without requiring a PC. It provides a portable and efficient solution for embedded developers working with ESP32-based systems and similar architectures.
+## What it does
 
-The core functionality centers around a microSD card slot that allows users to store multiple firmware files and retrieve logs or crash data from the connected target device. An onboard OLED display, paired with a 5-way joystick, offers an intuitive interface for navigating options, executing tasks, and viewing real-time logs or flashing status directly on the device.
+- **Flash from SD:** Lists up to 20 `.bin` files in the SD card root. Select a file and choose `0x0` for a merged image or `0x10000` for an application image built for a partition at that address. The firmware checks the ESP image header and target flash capacity, shows progress, and compares the written image with the target using MD5 before reporting success.
+- **Chip details:** Connects to the target and displays its detected chip type, revision, flash size, MAC address, and secure boot and flash encryption status when available.
+- **Read Serial:** Shows printable target UART output on the OLED and appends the raw output to `/target-log.txt` on the SD card. Press BACK to close the log and return to the menu. If the card or log write fails, `SD ERR` appears on the display; serial viewing continues.
+- **Flash log:** Each flash attempt appends the selected file, offset, loader messages, progress, and result to `/flash-log.txt` on the SD card. Flashing continues if the log cannot be written, and the result screen reports `Log unavailable`.
+- **UART Test:** Pulses the target reset line when CENTER is pressed.
+- **Software Version:** Displays the firmware version.
 
-PandaFlasher includes a USB-C port for powering and flashing the master device itself, along with a 3.3V voltage regulator that reliably powers both the master and connected slave board. A male pin header facilitates a direct connection to the slave device, while dedicated RX/TX LEDs provide immediate visual feedback on serial communication. A power LED confirms active system status at a glance.
+## Connection and use
 
-With its self-contained design and field-ready form factor, PandaFlasher is built for developers who need reliable flashing and debugging capabilities on the go—without tethering to a computer or relying on network connectivity.
+Connect the target's **RX, TX, BOOT/IO0, EN, 3.3 V, and GND** to the matching six-pin UART connection. Use a 3.3 V ESP target and connect RX to TX in each direction. The firmware controls BOOT/IO0 and EN to enter the target's serial bootloader and reset it afterward. Target UART communication runs at 115200 baud.
 
-## Key Components
-- ESP32 S3
-- SSD1315 based 0.96 OLED display
-- USB-C connector
-- MicroSD Card slot
-- 5-Way Switch
-- 3.3V Voltage regulator
-- RX / TX LEDs
-- Power LED
+Copy an ESP firmware `.bin` file to the SD card root. Use joystick UP/DOWN to navigate, CENTER to select, LEFT/RIGHT to change the flash offset on the confirmation screen, and BACK to cancel or return. Select **Flash from SD**, choose the file and correct offset, then press CENTER to start. Keep the target connected until the result appears. A standalone application image at `0x10000` also requires a compatible bootloader and partition table already on the target; a merged image at `0x0` includes those components if it was built that way.
 
+## Build
 
-# PCB
-PandaFlasher is open sourced and can be founnd here on [OSHWLab](https://oshwlab.com/derdeno/pandaflasher).
-You will find there all needed informations regarding parts, pcb design und production files.
-YOu can also order a pcb from JLCPCB using OSHWLab's website.
+This directory is a PlatformIO project. Build the `HW-2_0` environment with `pio run -e HW-2_0`, then upload with `pio run -e HW-2_0 -t upload`. It targets `esp32-s3-devkitc-1` with the Arduino framework, 8 MB flash, PSRAM, and the included partition layout. The display uses an SSD1306-compatible I2C driver; the SD card uses SPI. Pin assignments and the displayed version are in `src/config.h`.
 
-
-# Supporting this Project
-![](https://derdeno.github.io/PandaGarage/assets/images/sponsor_easyeda-bfd174b4cf605ca9d4454b99b5a4394e.png)
-![](https://derdeno.github.io/PandaGarage/assets/images/sponsor_jlcpcb-889f0bca2654b6b4ac336c8d4a51f32d.png)
-
-This project is currently sponsored by JLCPCB / EasyEDA, but welcomes additional support from the community. 
-
-If you're interested in supporting this project, you can:
-
-- Reach out on Discord [here](https://discord.gg/8VhnsCXKun)
-
-Your contributions and support are greatly appreciated!
+The firmware includes Espressif's [esp-serial-flasher](https://github.com/espressif/esp-serial-flasher) v2.1.0 (commit `57f55f51d7d9781a09f9843043aa9fa715b94654`, Apache-2.0) for target detection, flashing, and verification. See `LICENSE` for the firmware license and `lib/esp-serial-flasher/LICENSE` for the bundled library license.
