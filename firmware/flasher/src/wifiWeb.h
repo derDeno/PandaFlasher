@@ -5,16 +5,18 @@
 #include <Preferences.h>
 #include <qrcode.h>
 #include <ESPmDNS.h>
+#include <mdns.h>
 #include <esp_sleep.h>
 #include "webPage.h"
 
 namespace WifiWeb {
 WebServer server(80);
-String apName, apPassword, token;
+String apName, apPassword, token, mdnsName;
 bool portal = false;
 bool serverStarted = false;
 bool webSerial = false;
 bool mdnsStarted = false;
+uint32_t mdnsLastAttemptMs = 0;
 uint8_t serialPort = 0;
 uint32_t serialLastPollMs = 0;
 uint32_t wifiSwitchAt = 0;
@@ -115,7 +117,7 @@ String macText(const uint8_t mac[6]) {
 void info() {
     if (Extension::active && !Extension::selected && !webSerial) Extension::detect();
     String out = "{\"token\":" + jsonString(token) +
-        ",\"name\":" + jsonString(apName + ".local") +
+        ",\"name\":" + jsonString(mdnsStarted ? mdnsName + ".local" : "Unavailable") +
         ",\"version\":" + jsonString(SOFTWARE_VERSION) +
         ",\"uptime\":" + jsonString(duration(millis())) +
         ",\"ssid\":" + jsonString(portal ? apName : WiFi.SSID()) +
@@ -425,7 +427,8 @@ void drawStatus() {
 }
 
 void startSetup() {
-    if (mdnsStarted) { MDNS.end(); mdnsStarted = false; }
+    if (mdnsStarted) { MDNS.end(); mdnsStarted = false; mdnsName = ""; }
+    mdnsLastAttemptMs = 0;
     portal = true;
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(apName.c_str(), apPassword.c_str());
@@ -470,9 +473,30 @@ void begin() {
     else { server.begin(); serverStarted = true; }
 }
 
+void startMdns() {
+    mdnsLastAttemptMs = millis();
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+    if (mac.length() < 4) return;
+    String fallback = "pandaflasher-" + mac.substring(mac.length() - 4);
+    fallback.toLowerCase();
+    if (!MDNS.begin(fallback)) return;
+    mdnsName = fallback;
+    mdnsStarted = true;
+    esp_ip4_addr_t address = {};
+    if (mdns_query_a("pandaflasher", 1500, &address) == ESP_ERR_NOT_FOUND &&
+        mdns_hostname_set("pandaflasher") == ESP_OK) mdnsName = "pandaflasher";
+}
+
 void loop() {
     server.handleClient();
-    if (!mdnsStarted && !portal && WiFi.status() == WL_CONNECTED) mdnsStarted = MDNS.begin(apName.c_str());
+    if (mdnsStarted && WiFi.status() != WL_CONNECTED) {
+        MDNS.end();
+        mdnsStarted = false;
+        mdnsName = "";
+    }
+    if (!mdnsStarted && !portal && WiFi.status() == WL_CONNECTED &&
+        (!mdnsLastAttemptMs || millis() - mdnsLastAttemptMs >= 10000)) startMdns();
     if (shutdownAtMs && static_cast<int32_t>(millis() - shutdownAtMs) >= 0) esp_deep_sleep_start();
     if (webSerial && millis() - serialLastPollMs > 5000) closeSerial();
     if (webSerial && currentMenu != 1) {
