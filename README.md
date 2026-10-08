@@ -22,3 +22,7 @@ Copy an ESP firmware `.bin` file to the SD card root. Use joystick UP/DOWN to na
 This directory is a PlatformIO project. Build the `HW-2_0` environment with `pio run -e HW-2_0`, then upload with `pio run -e HW-2_0 -t upload`. It targets `esp32-s3-devkitc-1` with the Arduino framework, 8 MB flash, PSRAM, and the included partition layout. The display uses an SSD1306-compatible I2C driver; the SD card uses SPI. Pin assignments and the displayed version are in `src/config.h`.
 
 The firmware includes Espressif's [esp-serial-flasher](https://github.com/espressif/esp-serial-flasher) v2.1.0 (commit `57f55f51d7d9781a09f9843043aa9fa715b94654`, Apache-2.0) for target detection, flashing, and verification. See `LICENSE` for the firmware license and `lib/esp-serial-flasher/LICENSE` for the bundled library license.
+
+## Extension firmware
+
+Build the ESP32-C3 extension project with `pio run -d firmware/extension -e rev1`. See [its README](firmware/extension/README.md) for USB upload and OTA update instructions.
