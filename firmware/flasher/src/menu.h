@@ -8,6 +8,8 @@
 #include <SPI.h>
 #include <SD.h>
 
+namespace WifiWeb { void startSetup(); void drawSetup(); void drawStatus(); void begin(); void loop(); }
+
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 SPIClass SPI2(FSPI);
@@ -20,6 +22,7 @@ int fileCount = 0;
 int selectedFile = 0;
 bool filesLoaded = false;
 uint32_t flashOffset = 0;
+bool flashEraseAll = false;
 uint8_t flashPort = 0; // 0 = all responding ports, 1..8 = one port
 uint8_t progressPort = 0;
 bool selectingExtensionImage = false;
@@ -30,6 +33,7 @@ String resultText;
 File targetLog;
 bool logFailed = false;
 uint32_t lastLogFlushMs = 0;
+uint32_t restartAtMs = 0;
 
 
 // Target Serial Handling
@@ -280,7 +284,7 @@ void listSDCardFiles() {
         delay(200);
     }
     if (digitalRead(BACK_BUTTON) == LOW) {
-        currentMenu = selectingExtensionImage ? 10 : 0;
+        currentMenu = selectingExtensionImage ? 10 : selectingSelfImage ? 16 : 0;
         selectingExtensionImage = false;
         selectingSelfImage = false;
         filesLoaded = false;
@@ -299,6 +303,8 @@ void drawExtensionUpdateProgress(uint32_t sent, uint32_t total) {
     display.display();
 }
 
+void runExtensionUpdate();
+
 void confirmExtensionUpdate() {
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -311,6 +317,11 @@ void confirmExtensionUpdate() {
     if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 2; delay(200); return; }
     if (digitalRead(JOY_CENTER) != LOW) return;
     delay(200);
+    runExtensionUpdate();
+    currentMenu = 13;
+}
+
+void runExtensionUpdate() {
     File file = SD.open("/" + sdFiles[selectedFile], FILE_READ);
     resultText = file ? Extension::update(file, drawExtensionUpdateProgress) : "SD open failed";
     if (file) file.close();
@@ -320,7 +331,6 @@ void confirmExtensionUpdate() {
         resultText = Extension::active ? "Extension updated!" : "Sent; restart flasher";
     }
     selectingExtensionImage = false;
-    currentMenu = 13;
 }
 
 void showExtensionUpdateResult() {
@@ -343,6 +353,8 @@ void drawSelfUpdateProgress(uint32_t written, uint32_t total) {
     display.display();
 }
 
+void runSelfUpdate();
+
 void confirmSelfUpdate() {
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -355,6 +367,11 @@ void confirmSelfUpdate() {
     if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 2; delay(200); return; }
     if (digitalRead(JOY_CENTER) != LOW) return;
     delay(200);
+    runSelfUpdate();
+    currentMenu = 15;
+}
+
+void runSelfUpdate() {
     File file = SD.open("/" + sdFiles[selectedFile], FILE_READ);
     resultText = file ? SelfUpdate::install(file, drawSelfUpdateProgress) : "SD open failed";
     if (file) file.close();
@@ -365,10 +382,8 @@ void confirmSelfUpdate() {
         display.println("Update verified");
         display.println("Restarting...");
         display.display();
-        delay(1000);
-        ESP.restart();
+        restartAtMs = millis() + 1500;
     }
-    currentMenu = 15;
 }
 
 void showSelfUpdateResult() {
@@ -377,7 +392,7 @@ void showSelfUpdateResult() {
     display.println(resultText);
     display.println("BACK to menu");
     display.display();
-    if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 0; delay(200); }
+    if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 16; delay(200); }
 }
 
 void drawFlashProgress(uint32_t written, uint32_t total) {
@@ -420,6 +435,8 @@ void chooseFlashPort() {
     if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 2; delay(200); }
 }
 
+void runFlash();
+
 void confirmFlash() {
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -442,7 +459,11 @@ void confirmFlash() {
     }
     if (digitalRead(JOY_CENTER) != LOW) return;
     delay(200);
+    runFlash();
+    currentMenu = 7;
+}
 
+void runFlash() {
     File flashLog = SD.open("/flash-log.txt", FILE_APPEND);
     targetPort::flashLogFailed = !flashLog;
     targetPort::flashLog = flashLog ? &flashLog : nullptr;
@@ -474,7 +495,7 @@ void confirmFlash() {
             esp_loader_error_t err = flasher.connect();
             if (err == ESP_LOADER_SUCCESS) {
                 if (!file.seek(0)) err = ESP_LOADER_ERROR_FAIL;
-                else { progressPort = port; err = flasher.flash(file, flashOffset, drawFlashProgress); }
+                else { progressPort = port; err = flasher.flash(file, flashOffset, drawFlashProgress, flashEraseAll); }
             }
             flasher.close();
             if (targetPort::flashLog && !flashLog.printf("Port %u: %s\n", port, targetErrorName(err))) {
@@ -496,7 +517,7 @@ void confirmFlash() {
         display.println("Connecting...");
         display.display();
         esp_loader_error_t err = flasher.connect();
-        if (err == ESP_LOADER_SUCCESS) err = flasher.flash(file, flashOffset, drawFlashProgress);
+        if (err == ESP_LOADER_SUCCESS) err = flasher.flash(file, flashOffset, drawFlashProgress, flashEraseAll);
         resultText = err == ESP_LOADER_SUCCESS ? "Flash verified!" : "Flash failed:\n" + String(targetErrorName(err));
         flasher.close();
     }
@@ -505,7 +526,6 @@ void confirmFlash() {
     if (flashLog) flashLog.close();
     if (targetPort::flashLogFailed) resultText += "\nLog unavailable";
     file.close();
-    currentMenu = 7;
 }
 
 void readChipDetails() {
@@ -591,13 +611,51 @@ void setupMenu() {
     } else {
         Serial.println("SD Card initialized.");
     }
+    WifiWeb::begin();
+}
+
+uint8_t settingsOption = 0;
+
+void showSettings() {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("Settings");
+    const char *items[] = {"WiFi setup", "WiFi status", "Update Panda", "Restart Panda"};
+    for (int i = 0; i < 4; ++i) {
+        display.print(i == settingsOption ? "> " : "  ");
+        display.println(items[i]);
+    }
+    display.setCursor(0, 56);
+    display.println("UP/DN CENTER BACK");
+    display.display();
+    if (digitalRead(JOY_DOWN) == LOW) { settingsOption = (settingsOption + 1) % 4; delay(200); }
+    if (digitalRead(JOY_UP) == LOW) { settingsOption = (settingsOption + 3) % 4; delay(200); }
+    if (digitalRead(JOY_CENTER) == LOW) {
+        if (settingsOption == 0) { WifiWeb::startSetup(); currentMenu = 17; }
+        else if (settingsOption == 1) currentMenu = 19;
+        else if (settingsOption == 2) { selectingSelfImage = true; filesLoaded = false; currentMenu = 2; }
+        else currentMenu = 18;
+        delay(200);
+    }
+    if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 0; delay(200); }
+}
+
+void confirmRestart() {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("Restart PandaFlasher?");
+    display.println("CENTER confirm");
+    display.println("BACK cancel");
+    display.display();
+    if (digitalRead(JOY_CENTER) == LOW) ESP.restart();
+    if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 16; delay(200); }
 }
 
 void showMainMenu() {
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println(Extension::active ? "EXT ACTIVE  Select:" : "Select an option:");
-    static const char *options[] = {"Read Serial", "Flash from SD", "Chip details", "UART Test", "Software Version", "Update Panda", "Extension"};
+    static const char *options[] = {"Read Serial", "Flash from SD", "Chip details", "UART Test", "Software Version", "Settings", "Extension"};
     const int optionCount = Extension::active ? 7 : 6;
     int first = selectedOption >= 4 ? selectedOption - 3 : 0;
     for (int i = first; i < first + 4; ++i) {
@@ -616,8 +674,7 @@ void showMainMenu() {
         delay(200);
     }
     if (digitalRead(JOY_CENTER) == LOW) {
-        currentMenu = selectedOption == 6 ? 10 : selectedOption == 5 ? 2 : selectedOption == 2 ? 4 : selectedOption == 3 ? 3 : selectedOption == 4 ? 8 : selectedOption + 1;
-        if (selectedOption == 5) selectingSelfImage = true;
+        currentMenu = selectedOption == 6 ? 10 : selectedOption == 5 ? 16 : selectedOption == 2 ? 4 : selectedOption == 3 ? 3 : selectedOption == 4 ? 8 : selectedOption + 1;
         if (currentMenu == 2) filesLoaded = false;
         if (currentMenu == 1) {
             clearBuffers();
@@ -773,6 +830,18 @@ void loopMenu() {
             break;
         case 15:
             showSelfUpdateResult();
+            break;
+        case 16:
+            showSettings();
+            break;
+        case 17:
+            WifiWeb::drawSetup();
+            break;
+        case 18:
+            confirmRestart();
+            break;
+        case 19:
+            WifiWeb::drawStatus();
             break;
     }
 }

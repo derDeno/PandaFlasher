@@ -6,6 +6,7 @@
 #include "selfUpdate.h"
 #include "targetFlasher.h"
 #include "menu.h"
+#include "wifiWeb.h"
 
 
 void setup() {
@@ -18,5 +19,7 @@ void setup() {
 
 
 void loop() {
+    WifiWeb::loop();
+    if (restartAtMs && static_cast<int32_t>(millis() - restartAtMs) >= 0) ESP.restart();
     loopMenu();
 }
