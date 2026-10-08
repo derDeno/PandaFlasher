@@ -45,17 +45,27 @@ jobs:
             0x10000 firmware/flasher/.pio/build/HW-2_0/firmware.bin \
             0x5F0000 firmware/flasher/.pio/build/HW-2_0/littlefs.bin
 
-      - name: Add image to draft release
+      - name: Add images to versioned releases
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}
           EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
-          if gh release view "$VERSION" --json isDraft --jq '.isDraft' > draft.txt 2>/dev/null; then
-            test "$(cat draft.txt)" = true || { echo "Release $VERSION is already published" >&2; exit 1; }
-          else
-            gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "$VERSION"
-          fi
-          gh release upload "$VERSION" "PandaFlasher-${VERSION}.bin" --clobber
           cp firmware/extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin"
-          gh release upload "$VERSION" "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin" --clobber
+          release_image() {
+            tag=$1
+            asset=$2
+            title=$3
+            if draft=$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null); then
+              if [ "$draft" = false ]; then
+                echo "Skipping already published $tag"
+                return
+              fi
+              test "$draft" = true
+            else
+              gh release create "$tag" --draft --target "$GITHUB_SHA" --title "$title"
+            fi
+            gh release upload "$tag" "$asset" --clobber
+          }
+          release_image "$VERSION" "PandaFlasher-${VERSION}.bin" "$VERSION"
+          release_image "extension-v${EXTENSION_VERSION}" "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin" "Extension v${EXTENSION_VERSION}"

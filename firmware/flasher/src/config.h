@@ -1,6 +1,6 @@
 #pragma once
 
-#define SOFTWARE_VERSION "v2.0.1"
+#define SOFTWARE_VERSION "v2.1.3"
 
 // UART Pins
 #define UART_BAUD_RATE 115200
