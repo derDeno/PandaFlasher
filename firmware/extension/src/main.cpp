@@ -11,7 +11,7 @@ constexpr int MUX_A2 = 5;
 constexpr int MUX_A1 = 6;
 constexpr int MUX_A0 = 7;
 constexpr unsigned long IDLE_MS = 20;
-constexpr char VERSION[] = "1.1.0";
+constexpr char VERSION[] = "1.2.0";
 constexpr size_t LINE_SIZE = 80;
 constexpr size_t CHUNK_SIZE = 512;
 
@@ -72,11 +72,15 @@ void command() {
   if (strcmp(line, "PFX1:ID") == 0) {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    char response[112];
+    char response[144];
     snprintf(response, sizeof(response),
-             "OK ID HW=1.0 MCU=ESP32-C3-MINI-1U-N4 FW=%s MAC=%02X%02X%02X%02X%02X%02X PORTS=8\n",
-             VERSION, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+             "OK ID HW=1.0 MCU=ESP32-C3-MINI-1U-N4 FW=%s MAC=%02X%02X%02X%02X%02X%02X PORTS=8 UPTIME=%lu\n",
+             VERSION, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], millis());
     reply(response);
+  } else if (strcmp(line, "PFX1:RESTART") == 0) {
+    reply("OK RESTART\n");
+    delay(100);
+    ESP.restart();
   } else if (strcmp(line, "PFX1:DISCOVER") == 0) {
     reply("OK DISCOVER\n");
   } else if (strncmp(line, "PFX1:SELECT:", 12) == 0 && length == 13 &&

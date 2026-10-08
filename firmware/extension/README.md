@@ -89,8 +89,9 @@ The extension MCU listens on `PF-TX` for control commands. Both it and the selec
 
 | PandaFlasher sends | Extension replies on `PF-RX` | Meaning |
 | --- | --- | --- |
-| `PFX1:ID\n` | `OK ID HW=1.0 MCU=ESP32-C3-MINI-1U-N4 FW=<version> MAC=<12-hex-digits> PORTS=8\n` | Identify this extension board. HW is the board revision, supplied by firmware configuration; the PCB has no revision-sense input. |
+| `PFX1:ID\n` | `OK ID HW=1.0 MCU=ESP32-C3-MINI-1U-N4 FW=<version> MAC=<12-hex-digits> PORTS=8 UPTIME=<milliseconds>\n` | Identify this extension board. HW is the board revision, supplied by firmware configuration; the PCB has no revision-sense input. |
 | `PFX1:DISCOVER\n` | `OK DISCOVER\n` | Start a PandaFlasher-driven scan of all eight ports, as described below. |
+| `PFX1:RESTART\n` | `OK RESTART\n` | Restart the PandaExtension MCU when no target is selected. The reply is sent before rebooting. |
 | `PFX1:SELECT:<n>\n`, `n` = 1–8 | `OK SELECT <n>\n` | Select and power one target. Valid only while no target is selected. |
 | `PFX1:DESELECT\n` | `OK DESELECT\n` | Disconnect and power off the selected target. |
 | `PFX1:UPDATE:<size>:<md5>\n` | `OK UPDATE\n` | With no target selected, begin an OTA application update. Size is decimal bytes and MD5 is 32 lowercase hex digits. The extension rejects images larger than its inactive OTA slot. |

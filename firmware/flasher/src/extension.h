@@ -10,10 +10,10 @@ namespace Extension {
 String hashFile(File &file);
 static bool active = false;
 static uint8_t selected = 0;
-static char identity[112] = {};
+static char identity[144] = {};
 
 static bool waitResponse(const char *expected, uint32_t timeoutMs) {
-    char response[112];
+    char response[144];
     size_t length = 0;
     const uint32_t start = millis();
     while (millis() - start < timeoutMs) {
@@ -46,6 +46,7 @@ static void detect() {
 }
 
 static bool discover() { return active && !selected && command("PFX1:DISCOVER\n", "OK DISCOVER"); }
+static bool restart() { return active && !selected && command("PFX1:RESTART\n", "OK RESTART"); }
 
 static bool select(uint8_t port) {
     if (!active || selected || port < 1 || port > 8) return false;

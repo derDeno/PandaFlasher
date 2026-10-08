@@ -111,7 +111,7 @@ public:
         return info;
     }
 
-    esp_loader_error_t flash(File &file, uint32_t offset, void (*progress)(uint32_t, uint32_t)) {
+    esp_loader_error_t flash(File &file, uint32_t offset, void (*progress)(uint32_t, uint32_t), bool eraseAll = false) {
         const uint32_t size = file.size();
         if (!size || size > UINT32_MAX - 3 || (offset & 3)) return ESP_LOADER_ERROR_INVALID_PARAM;
         uint32_t flashSize = 0;
@@ -119,6 +119,10 @@ public:
         if (err != ESP_LOADER_SUCCESS) return err;
         const uint32_t padded = (size + 3) & ~3U;
         if (offset > flashSize || padded > flashSize - offset) return ESP_LOADER_ERROR_IMAGE_SIZE;
+        if (eraseAll) {
+            err = esp_loader_flash_erase(&loader_);
+            if (err != ESP_LOADER_SUCCESS) return err;
+        }
 
         uint8_t buffer[1024];
         esp_loader_flash_cfg_t cfg = {};
