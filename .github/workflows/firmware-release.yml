@@ -41,7 +41,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
           EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
-          python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}.bin" \
+          python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}-full.bin" \
             0x0 firmware/flasher/.pio/build/HW-2_0/bootloader.bin \
             0x8000 firmware/flasher/.pio/build/HW-2_0/partitions.bin \
             0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
@@ -60,7 +60,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
           EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
-          cp firmware/extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin"
+          cp firmware/flasher/.pio/build/HW-2_0/firmware.bin "PandaFlasher-${VERSION}-OTA.bin"
+          cp firmware/extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}-OTA.bin"
           release_image() {
             tag=$1
             title=$2
@@ -76,7 +77,9 @@ jobs:
             fi
             gh release upload "$tag" "$@" --clobber
           }
-          release_image "$VERSION" "Flasher $VERSION" "PandaFlasher-${VERSION}.bin"
+          release_image "$VERSION" "Flasher $VERSION" \
+            "PandaFlasher-${VERSION}-OTA.bin" \
+            "PandaFlasher-${VERSION}-full.bin"
           release_image "extension-v${EXTENSION_VERSION}" "Extension v${EXTENSION_VERSION}" \
-            "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin" \
+            "PandaFlasher-Extension-v${EXTENSION_VERSION}-OTA.bin" \
             "PandaFlasher-Extension-v${EXTENSION_VERSION}-full.bin"
