@@ -2,7 +2,7 @@
 
 The extension board lets one PandaFlasher connect to eight ESP target boards without moving the programming cable. Its MCU selects **one target at a time**. The selected target receives 3.3 V, UART, BOOT, and EN; the other seven target ports remain unpowered and disconnected from those four signals. Rev 1 has no extension-board chaining or inter-board discovery.
 
-The hardware reference is [`boards/extension/pcb/`](../../boards/extension/pcb/). The firmware in this directory implements the extension side of the protocol below. The PandaFlasher firmware probes for the extension at startup and can flash one port or all responding ports from its flash menu.
+The hardware reference is [`boards/extension/pcb/`](../../boards/extension/pcb/). The firmware in this directory implements the extension side of the protocol below. The public PandaFlasher firmware does not yet implement the controller side.
 
 ## Build and upload
 
