@@ -33,10 +33,13 @@ jobs:
           pio run -d firmware/flasher -e HW-2_0
           pio run -d firmware/flasher -e HW-2_0 -t buildfs
           pio run -d firmware/extension -e rev1
+          mkdir -p firmware/extension/data
+          pio run -d firmware/extension -e rev1 -t buildfs
 
       - name: Combine flash image
         env:
           VERSION: ${{ steps.version.outputs.value }}
+          EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
           python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}.bin" \
             0x0 firmware/flasher/.pio/build/HW-2_0/bootloader.bin \
@@ -44,6 +47,12 @@ jobs:
             0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
             0x10000 firmware/flasher/.pio/build/HW-2_0/firmware.bin \
             0x5F0000 firmware/flasher/.pio/build/HW-2_0/littlefs.bin
+          python -m esptool --chip esp32c3 merge-bin -o "PandaFlasher-Extension-v${EXTENSION_VERSION}-full.bin" \
+            0x0 firmware/extension/.pio/build/rev1/bootloader.bin \
+            0x8000 firmware/extension/.pio/build/rev1/partitions.bin \
+            0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
+            0x10000 firmware/extension/.pio/build/rev1/firmware.bin \
+            0x290000 firmware/extension/.pio/build/rev1/spiffs.bin
 
       - name: Add images to versioned releases
         env:
@@ -54,8 +63,8 @@ jobs:
           cp firmware/extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin"
           release_image() {
             tag=$1
-            asset=$2
-            title=$3
+            title=$2
+            shift 2
             if draft=$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null); then
               if [ "$draft" = false ]; then
                 echo "Skipping already published $tag"
@@ -65,7 +74,9 @@ jobs:
             else
               gh release create "$tag" --draft --target "$GITHUB_SHA" --title "$title"
             fi
-            gh release upload "$tag" "$asset" --clobber
+            gh release upload "$tag" "$@" --clobber
           }
-          release_image "$VERSION" "PandaFlasher-${VERSION}.bin" "$VERSION"
-          release_image "extension-v${EXTENSION_VERSION}" "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin" "Extension v${EXTENSION_VERSION}"
+          release_image "$VERSION" "Flasher $VERSION" "PandaFlasher-${VERSION}.bin"
+          release_image "extension-v${EXTENSION_VERSION}" "Extension v${EXTENSION_VERSION}" \
+            "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin" \
+            "PandaFlasher-Extension-v${EXTENSION_VERSION}-full.bin"
