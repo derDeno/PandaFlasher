@@ -2,7 +2,7 @@
 
 The extension board lets one PandaFlasher connect to eight ESP target boards without moving the programming cable. Its MCU selects **one target at a time**. The selected target receives 3.3 V, UART, BOOT, and EN; the other seven target ports remain unpowered and disconnected from those four signals. Rev 1 has no extension-board chaining or inter-board discovery.
 
-The hardware reference is [`boards/extension/pcb/`](../../boards/extension/pcb/). The firmware in this directory implements the extension side of the protocol below. The public PandaFlasher firmware does not yet implement the controller side.
+The hardware reference is [`boards/extension/pcb/`](../../boards/extension/pcb/). The firmware in this directory implements the extension side of the protocol below. The PandaFlasher firmware probes for the extension at startup and can flash one port or all responding ports from its flash menu.
 
 ## Build and upload
 
@@ -85,7 +85,7 @@ To change targets, first drive `MUX-EN` low, then set the three address bits, th
 
 The PandaFlasher uses its existing 115200-baud, 8N1 target UART (`ESP_TX` = GPIO17, `ESP_RX` = GPIO16). Its target BOOT and EN outputs are GPIO18 and GPIO8. The extension board does not translate or re-time target UART data: the selected TMUX1511 passes the PandaFlasher's TX, RX, BOOT, and EN signals through to one target. The PandaFlasher continues to run the ESP serial-flashing protocol with that target.
 
-The extension MCU listens on `PF-TX` for control commands. Both it and the selected target can hear PandaFlasher TX, so it must ignore ordinary target traffic. The rev-1 protocol uses 115200 baud, 8N1, ASCII, and a single LF (`\n`) terminator.
+The extension MCU listens on `PF-TX` for control commands. Both it and the selected target can hear PandaFlasher TX, so it must ignore ordinary target traffic. The following **planned rev-1 protocol** uses 115200 baud, 8N1, ASCII, and a single LF (`\n`) terminator. It is a specification for both firmware projects; neither side implements it yet.
 
 | PandaFlasher sends | Extension replies on `PF-RX` | Meaning |
 | --- | --- | --- |
