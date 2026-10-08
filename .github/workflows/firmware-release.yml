@@ -15,36 +15,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read firmware version
+      - name: Read firmware versions
         id: version
         run: |
-          version=$(sed -nE 's/^#define SOFTWARE_VERSION "(v[0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' src/config.h)
+          version=$(sed -nE 's/^#define SOFTWARE_VERSION "(v[0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' firmware/flasher/src/config.h)
           test -n "$version"
           echo "value=$version" >> "$GITHUB_OUTPUT"
+          extension_version=$(sed -nE 's/^constexpr char VERSION\[\] = "([0-9]+\.[0-9]+\.[0-9]+)";$/\1/p' firmware/extension/src/main.cpp)
+          test -n "$extension_version"
+          echo "extension=$extension_version" >> "$GITHUB_OUTPUT"
 
       - name: Install build tools
         run: python -m pip install platformio esptool
 
       - name: Build firmware and filesystem
         run: |
-          pio run -e HW-2_0
-          pio run -e HW-2_0 -t buildfs
+          pio run -d firmware/flasher -e HW-2_0
+          pio run -d firmware/flasher -e HW-2_0 -t buildfs
+          pio run -d firmware/extension -e rev1
 
       - name: Combine flash image
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}.bin" \
-            0x0 .pio/build/HW-2_0/bootloader.bin \
-            0x8000 .pio/build/HW-2_0/partitions.bin \
+            0x0 firmware/flasher/.pio/build/HW-2_0/bootloader.bin \
+            0x8000 firmware/flasher/.pio/build/HW-2_0/partitions.bin \
             0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
-            0x10000 .pio/build/HW-2_0/firmware.bin \
-            0x5F0000 .pio/build/HW-2_0/littlefs.bin
+            0x10000 firmware/flasher/.pio/build/HW-2_0/firmware.bin \
+            0x5F0000 firmware/flasher/.pio/build/HW-2_0/littlefs.bin
 
       - name: Add image to draft release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}
+          EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
           if gh release view "$VERSION" --json isDraft --jq '.isDraft' > draft.txt 2>/dev/null; then
             test "$(cat draft.txt)" = true || { echo "Release $VERSION is already published" >&2; exit 1; }
@@ -52,3 +57,5 @@ jobs:
             gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "$VERSION"
           fi
           gh release upload "$VERSION" "PandaFlasher-${VERSION}.bin" --clobber
+          cp firmware/extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin"
+          gh release upload "$VERSION" "PandaFlasher-Extension-v${EXTENSION_VERSION}.bin" --clobber
