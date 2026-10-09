@@ -49,6 +49,10 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
     dialog h3{margin-top:0}
     dialog form{display:flex;justify-content:flex-end;gap:.5rem}
     dialog button[value="delete"],dialog button[value="flash"]{background:#b93030;color:#fff;border:0;border-radius:.3rem}
+    #flash-progress{max-height:12rem;overflow:auto}
+    .flash-target{margin:.75rem 0}
+    .flash-target progress{display:block;width:100%}
+    #flash-log{box-sizing:border-box;width:100%;resize:vertical;background:#121821;color:#eee;border:1px solid #43536b;border-radius:.3rem;padding:.5rem;font:12px ui-monospace,monospace}
     input,select,button{font:inherit;padding:.45rem;margin:.25rem}
     button{cursor:pointer}
     pre{white-space:pre-wrap}
@@ -118,6 +122,11 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
     <h2>Settings</h2>
     <section>
       <h3>Wi-Fi</h3>
+      <form id="ap-name-form">
+        <label for="ap-ssid">Setup access point name</label>
+        <input id="ap-ssid" name="apSsid" required minlength="1" maxlength="32">
+        <button>Save name</button>
+      </form>
       <form>
         <button type="button" data-op="wifi">Change Wi-Fi network</button>
         <button type="button" data-op="ap">Restart in AP mode</button>
@@ -128,7 +137,6 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
       <form>
         <button type="button" data-op="reboot">Restart PandaFlasher</button>
         <button type="button" data-op="extension-restart">Restart PandaExtension</button>
-        <button type="button" data-op="shutdown">Shutdown</button>
       </form>
     </section>
     <h2>Firmware update</h2>
@@ -200,9 +208,12 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
   </div>
   <dialog id="flash-dialog" aria-labelledby="flash-title">
     <h3 id="flash-title">Flash selected devices?</h3>
-    <p>Flashing will erase everything on each selected ESP. This cannot be undone.</p>
+    <p id="flash-warning">Flashing will erase everything on each selected ESP. This cannot be undone.</p>
     <p id="flash-targets"></p>
-    <form method="dialog">
+    <div id="flash-progress" hidden aria-live="polite"></div>
+    <label id="flash-log-label" for="flash-log" hidden>Flash log</label>
+    <textarea id="flash-log" rows="6" readonly hidden></textarea>
+    <form id="flash-form" method="dialog">
       <button value="cancel" autofocus>Cancel</button>
       <button value="flash">Flash</button>
     </form>
@@ -330,9 +341,69 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
       document.querySelector('#flash-targets').textContent = 'Targets: ' + [...selectedCards.values()].map(device => device.name).join(', ');
       document.querySelector('#flash-dialog').showModal();
     });
-    document.querySelector('#flash-dialog').addEventListener('close', event => {
-      if (live && event.target.returnValue === 'flash')
-        operate('flash', {ports: selectedMask(), file: document.querySelector('#flash-file').value});
+    const flashDialog = document.querySelector('#flash-dialog');
+    const flashForm = document.querySelector('#flash-form');
+    let flashing = false;
+    flashDialog.addEventListener('cancel', event => { if (flashing) event.preventDefault(); });
+    flashDialog.addEventListener('close', async () => {
+      if (!live || flashDialog.returnValue !== 'flash') return;
+      flashing = true;
+      document.querySelector('#flash-title').textContent = 'Flashing devices';
+      document.querySelector('#flash-warning').hidden = true;
+      document.querySelector('#flash-targets').hidden = true;
+      const progress = document.querySelector('#flash-progress');
+      progress.replaceChildren();
+      progress.hidden = false;
+      const log = document.querySelector('#flash-log');
+      log.value = '';
+      log.hidden = false;
+      document.querySelector('#flash-log-label').hidden = false;
+      const rows = new Map();
+      for (const device of selectedCards.values()) {
+        const row = document.createElement('div');
+        row.className = 'flash-target';
+        const label = document.createElement('span');
+        label.textContent = device.name + ': 0%';
+        const bar = document.createElement('progress');
+        bar.max = 100;
+        bar.value = 0;
+        row.append(label, bar);
+        progress.append(row);
+        rows.set(device.port, {label, bar});
+      }
+      flashForm.replaceChildren(Object.assign(document.createElement('button'), {value: 'close', textContent: 'Flashing…', disabled: true}));
+      flashDialog.showModal();
+      try {
+        const response = await api('/api/action', {method: 'POST', body: new URLSearchParams({token, op: 'flash', ports: selectedMask(), file: document.querySelector('#flash-file').value})});
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = '';
+        while (true) {
+          const {value, done} = await reader.read();
+          pending += decoder.decode(value || new Uint8Array(), {stream: !done});
+          const lines = pending.split('\n');
+          pending = lines.pop();
+          for (const line of lines) {
+            if (!line) continue;
+            const event = JSON.parse(line);
+            if (event.type === 'progress') {
+              const row = rows.get(event.port);
+              if (row) { row.bar.value = event.percent; row.label.textContent = row.label.textContent.replace(/: .*$/, ': ' + event.percent + '%'); }
+            } else if (event.type === 'result') {
+              const row = rows.get(event.port);
+              if (row) row.label.textContent = row.label.textContent.replace(/: .*$/, ': ' + event.text.replace(/\n/g, ' '));
+            } else if (event.type === 'log') {
+              log.value += event.text + '\n';
+              log.scrollTop = log.scrollHeight;
+            }
+          }
+          if (done) break;
+        }
+      } catch (error) { log.value += error.message + '\n'; }
+      flashForm.replaceChildren(Object.assign(document.createElement('button'), {value: 'close', textContent: 'Close'}));
+      flashForm.querySelector('button').focus();
+      document.querySelector('#flash-title').textContent = 'Flash complete';
+      flashing = false;
     });
     document.querySelector('#reset-button').addEventListener('click', () => {
       if (live && selectedCards.size) operate('reset', {ports: selectedMask()});
@@ -370,6 +441,7 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
         name: info.name, version: info.version, uptime: info.uptime,
         ssid: info.ssid, ip: info.ip, mac: info.mac, signal: info.signal
       })) document.getElementById('info-' + id).textContent = value;
+      document.querySelector('#ap-ssid').value = info.apSsid;
       document.querySelector('#extension-info').hidden = !info.extension;
       document.querySelector('#extension-update').hidden = !info.extension;
       document.querySelector('[data-op="extension-restart"]').hidden = !info.extension;
@@ -400,6 +472,15 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
       const file = op === 'self' ? document.querySelector('#self-file').value
         : op === 'extension' ? document.querySelector('#extension-file').value : '';
       operate(op, file ? {file} : {});
+    });
+
+    document.querySelector('#ap-name-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!live) return;
+      try {
+        const body = new URLSearchParams({token, apSsid: document.querySelector('#ap-ssid').value});
+        showNotice(await (await api('/api/ap-name', {method: 'POST', body})).text());
+      } catch (error) { showNotice(error.message); }
     });
 
     const deleteDialog = document.querySelector('#delete-dialog');
