@@ -47,7 +47,7 @@ Pin numbers below refer to the PandaFlasher header. `RX` and `TX` are named from
 | 5 | BOOT | BOOT / IO0 |
 | 6 | RESET | EN / RESET |
 
-Use a 3.3 V ESP target and a common ground. The target UART runs at 115200 baud. If using a PandaExtension, connect its PandaFlasher header to this six-pin header instead of connecting one target directly. Power the extension from its USB-C 5 V input; it generates 3.3 V for the selected target. In this setup, PandaFlasher header pin 4 only drives the extension's presence LED and does not power the extension targets. Connect targets to the numbered extension ports. The extension's PWR OUT connector can pass its 5 V input to PandaFlasher.
+Use a 3.3 V ESP target and a common ground. The target UART runs at 115200 baud. If using a PandaExtension, connect its PandaFlasher header to this six-pin header instead of connecting one target directly. When both boards are connected, power the PandaExtension through its USB-C 5 V input, then connect the extension's PWR OUT USB-C connector to PandaFlasher's USB port to power the flasher. The extension generates 3.3 V for the selected target. In this setup, PandaFlasher header pin 4 only drives the extension's presence LED and does not power the extension targets. Connect targets to the numbered extension ports.
 
 Copy the target firmware `.bin` to the SD card root. Use joystick UP/DOWN to navigate and CENTER to select; choose the on-screen **Back** option with the joystick to cancel or return. Select **Flash from SD**, choose a file and offset, then press CENTER to start. Use `0x0` for a merged image; use `0x10000` for an application image only when a compatible bootloader and partition table are already installed on the target. Keep the target connected and powered until the result appears. With an extension, connect it before starting PandaFlasher because extension detection runs at startup; then choose a port or **All responding ports** in the flash workflow.
 
@@ -58,7 +58,7 @@ PandaFlasher and PandaExtension have independently versioned firmware and separa
 Each release contains two images:
 
 - `*-OTA.bin` is the application image for an OTA update. Copy it to the SD card and choose the matching update function in PandaFlasher or the Web UI.
-- `*-full.bin` combines the bootloader, partition table, application, and filesystem for a full USB/serial installation with Espressif `esptool`.
+- `*-full.bin` combines the bootloader, partition table, application, and filesystem for a full USB/serial installation with Espressif `esptool`. Connect PandaFlasher to its own USB port, or PandaExtension to its own USB-C port, to flash the matching board.
 
 Flasher release files follow `PandaFlasher-<version>-OTA.bin` and `PandaFlasher-<version>-full.bin`. Extension release files follow `PandaFlasher-Extension-v<version>-OTA.bin` and `PandaFlasher-Extension-v<version>-full.bin`. Choose the release and file matching the board you are updating. Install the extension's full image over its own USB-C port the first time; then its OTA update can be sent through PandaFlasher. Do not use a full image for an OTA update.
 
@@ -72,7 +72,7 @@ Install Python and PlatformIO, then run these commands from the repository root.
 python -m platformio run -d firmware/flasher -e HW-2_0
 ```
 
-The application image is `firmware/flasher/.pio/build/HW-2_0/firmware.bin`. To build the Web UI filesystem too, run `python -m platformio run -d firmware/flasher -e HW-2_0 -t buildfs`. To upload over USB, run `python -m platformio run -d firmware/flasher -e HW-2_0 -t upload`.
+The application image is `firmware/flasher/.pio/build/HW-2_0/firmware.bin`. To build the Web UI filesystem too, run `python -m platformio run -d firmware/flasher -e HW-2_0 -t buildfs`. Connect your computer to PandaFlasher's USB port, then upload with `python -m platformio run -d firmware/flasher -e HW-2_0 -t upload`.
 
 ### PandaExtension (ESP32-C3, rev 1)
 
@@ -80,4 +80,4 @@ The application image is `firmware/flasher/.pio/build/HW-2_0/firmware.bin`. To b
 python -m platformio run -d firmware/extension -e rev1
 ```
 
-The application image is `firmware/extension/.pio/build/rev1/firmware.bin`. To upload over the extension's USB-C port, run `python -m platformio run -d firmware/extension -e rev1 -t upload` (add `--upload-port <port>` if PlatformIO does not find it automatically).
+The application image is `firmware/extension/.pio/build/rev1/firmware.bin`. Connect your computer to PandaExtension's USB-C port, then upload with `python -m platformio run -d firmware/extension -e rev1 -t upload` (add `--upload-port <port>` if PlatformIO does not find it automatically).
