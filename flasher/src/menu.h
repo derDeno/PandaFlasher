@@ -7,8 +7,9 @@
 #include <Adafruit_SSD1306.h>
 #include <SPI.h>
 #include <SD.h>
+#include <Preferences.h>
 
-namespace WifiWeb { void startSetup(); void drawSetup(); void drawStatus(); void begin(); void loop(); }
+namespace WifiWeb { void startSetup(); void drawSetup(); void drawStatus(); void begin(); void loop(); void flashProgress(uint8_t port, uint8_t percent); }
 
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -32,6 +33,7 @@ TargetInfo chipInfo;
 String resultText;
 File targetLog;
 bool logFailed = false;
+bool sdLoggingEnabled = true;
 uint32_t lastLogFlushMs = 0;
 uint32_t restartAtMs = 0;
 
@@ -404,6 +406,7 @@ void drawFlashProgress(uint32_t written, uint32_t total) {
         targetPort::flashLogFailed = true;
         targetPort::flashLog = nullptr;
     }
+    WifiWeb::flashProgress(progressPort, percent);
     display.clearDisplay();
     display.setCursor(0, 0);
     if (progressPort) display.printf("Flashing port %u\n", progressPort);
@@ -464,8 +467,9 @@ void confirmFlash() {
 }
 
 void runFlash() {
-    File flashLog = SD.open("/flash-log.txt", FILE_APPEND);
-    targetPort::flashLogFailed = !flashLog;
+    File flashLog;
+    if (sdLoggingEnabled) flashLog = SD.open("/flash-log.txt", FILE_APPEND);
+    targetPort::flashLogFailed = sdLoggingEnabled && !flashLog;
     targetPort::flashLog = flashLog ? &flashLog : nullptr;
     if (targetPort::flashLog && !(Extension::active
         ? flashLog.printf("\n--- Flash %s at 0x%lx, port %u ---\n", sdFiles[selectedFile].c_str(), static_cast<unsigned long>(flashOffset), flashPort)
@@ -616,25 +620,35 @@ void setupMenu() {
 
 uint8_t settingsOption = 0;
 
+void saveSdLogging(bool enabled) {
+    sdLoggingEnabled = enabled;
+    Preferences prefs;
+    prefs.begin("settings", false);
+    prefs.putBool("sdLog", enabled);
+    prefs.end();
+    if (!enabled && targetLog) targetLog.close();
+}
+
 void showSettings() {
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Settings");
-    const char *items[] = {"WiFi setup", "WiFi status", "Update Panda", "Restart Panda"};
-    for (int i = 0; i < 4; ++i) {
+    const char *items[] = {"WiFi setup", "WiFi status", "Update Panda", "Restart Panda", sdLoggingEnabled ? "SD logs: On" : "SD logs: Off"};
+    for (int i = 0; i < 5; ++i) {
         display.print(i == settingsOption ? "> " : "  ");
         display.println(items[i]);
     }
     display.setCursor(0, 56);
     display.println("UP/DN CENTER BACK");
     display.display();
-    if (digitalRead(JOY_DOWN) == LOW) { settingsOption = (settingsOption + 1) % 4; delay(200); }
-    if (digitalRead(JOY_UP) == LOW) { settingsOption = (settingsOption + 3) % 4; delay(200); }
+    if (digitalRead(JOY_DOWN) == LOW) { settingsOption = (settingsOption + 1) % 5; delay(200); }
+    if (digitalRead(JOY_UP) == LOW) { settingsOption = (settingsOption + 4) % 5; delay(200); }
     if (digitalRead(JOY_CENTER) == LOW) {
         if (settingsOption == 0) { WifiWeb::startSetup(); currentMenu = 17; }
         else if (settingsOption == 1) currentMenu = 19;
         else if (settingsOption == 2) { selectingSelfImage = true; filesLoaded = false; currentMenu = 2; }
-        else currentMenu = 18;
+        else if (settingsOption == 3) currentMenu = 18;
+        else saveSdLogging(!sdLoggingEnabled);
         delay(200);
     }
     if (digitalRead(BACK_BUTTON) == LOW) { currentMenu = 0; delay(200); }
@@ -679,11 +693,11 @@ void showMainMenu() {
         if (currentMenu == 1) {
             clearBuffers();
             logFailed = false;
-            if (SD.begin(SD_CS, SPI2)) targetLog = SD.open("/target-log.txt", FILE_APPEND);
+            if (sdLoggingEnabled && SD.begin(SD_CS, SPI2)) targetLog = SD.open("/target-log.txt", FILE_APPEND);
             if (targetLog) {
                 targetLog.println("\n--- target log session ---");
                 lastLogFlushMs = millis();
-            } else {
+            } else if (sdLoggingEnabled) {
                 logFailed = true;
             }
         }
