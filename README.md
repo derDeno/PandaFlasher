@@ -1,47 +1,83 @@
-# PandaFlasher firmware
+# PandaFlasher
 
-PandaFlasher is firmware for an ESP32-S3 handheld programmer. It uses an OLED screen, joystick-operated on-screen menus, and an SD card to flash another ESP chip over UART without a computer. This firmware is configured for PandaFlasher hardware revision 2.0.
+## 1. Project summary
 
-## Releases and firmware versions
+PandaFlasher is an ESP32-S3 handheld programmer that flashes ESP targets over UART using its OLED screen, joystick, and SD card. An optional PandaExtension connects it to as many as eight targets for sequential discovery and flashing.
 
-PandaFlasher and the optional PandaExtension have separate firmware versions and separate GitHub releases. The current source versions are **PandaFlasher v2.2.0** and **PandaExtension v1.2.0**; the devices also report their versions in the **Info** screen of the Web UI and the extension status menu. After a pull request from `dev` is merged into `main`, the release workflow prepares two releases: **Flasher v2.2.0** (tag `v2.2.0`) and **Extension v1.2.0** (tag `extension-v1.2.0`). The two versions can change independently.
+## 2. What the project does
+
+### PandaFlasher
+
+- **Flash from SD:** Select a `.bin` file from the SD card root and flash it at `0x0` (a merged image) or `0x10000` (an application image). The flasher checks the image and target capacity, shows progress, verifies the written data with MD5, and records each attempt in `/flash-log.txt`.
+- **Target details:** Read the connected chip type, revision, flash size, MAC address, and available secure boot and flash encryption status.
+- **Read Serial:** View printable target UART output on the OLED while raw output is saved to `/target-log.txt`.
+- **UART Test:** Reset the connected target.
+- **Firmware update:** Update PandaFlasher from an application image on the SD card. The update is written to the inactive OTA slot and checked before restart.
+- **Software version:** View the installed PandaFlasher firmware version.
+
+### PandaExtension
+
+The optional rev 1 extension selects and powers one of eight ESP target ports at a time. PandaFlasher can discover ports, flash a selected port, or try **All responding ports** and report verified, failed, and no-response counts. The extension also reports its hardware revision, firmware version, MCU, MAC address, and port count, and accepts firmware updates from PandaFlasher. Extension boards cannot be chained.
+
+## 3. Web UI: functions and connection
+
+On PandaFlasher, choose **Settings → WiFi setup**. Use a phone or computer to scan the OLED QR code and join the password-protected `Panda-xxxxxx` access point. Open `http://192.168.4.1` and enter the Wi-Fi network credentials. After PandaFlasher joins that network, the setup access point closes. **Settings → WiFi status** shows its LAN address. From a device on the same network, open `http://<device-ip>` or `http://pandaflasher.local`. If that name is already taken, use `http://pandaflasher-xxxx.local`, where `xxxx` is the last four characters of the Wi-Fi MAC address.
+
+The Web UI provides:
+
+- **Home:** Identify connected ESP targets, select multiple responding targets, reset them, or flash them in sequence. With a PandaExtension connected, it can scan and operate its target ports too.
+- **Filemanager:** Upload and delete `.bin` files on the PandaFlasher SD card.
+- **Settings:** Change Wi-Fi, restart PandaFlasher or a connected PandaExtension, restart in Wi-Fi setup mode, enter deep sleep, and install OTA application images for either board.
+- **Info:** View PandaFlasher version and uptime, network details, and connected PandaExtension details and version.
+
+Web flashing erases all flash on each selected target and writes a merged full-flash image from `0x0`. The image must include the partition table at `0x8000` and application at `0x10000`; a standalone OTA application image is not suitable. The Web UI has no login, so anyone on the same network can use its controls. Deep sleep requires a power cycle to wake the device.
+
+## 4. Connections and use
+
+### PandaFlasher six-pin target connector
+
+Pin numbers below refer to the PandaFlasher header. `RX` and `TX` are named from the PandaFlasher's perspective, so connect UART signals crossed: PandaFlasher RX to target TX, and PandaFlasher TX to target RX.
+
+| Pin | Signal | Connect to target |
+| ---: | --- | --- |
+| 1 | GND | GND |
+| 2 | RX | UART TX |
+| 3 | TX | UART RX |
+| 4 | 3.3 V | 3.3 V |
+| 5 | BOOT | BOOT / IO0 |
+| 6 | RESET | EN / RESET |
+
+Use a 3.3 V ESP target and a common ground. The target UART runs at 115200 baud. If using a PandaExtension, connect its PandaFlasher header to this six-pin header instead of connecting one target directly. Power the extension from its USB-C 5 V input; it generates 3.3 V for the selected target. In this setup, PandaFlasher header pin 4 only drives the extension's presence LED and does not power the extension targets. Connect targets to the numbered extension ports. The extension's PWR OUT connector can pass its 5 V input to PandaFlasher.
+
+Copy the target firmware `.bin` to the SD card root. Use joystick UP/DOWN to navigate and CENTER to select; choose the on-screen **Back** option with the joystick to cancel or return. Select **Flash from SD**, choose a file and offset, then press CENTER to start. Use `0x0` for a merged image; use `0x10000` for an application image only when a compatible bootloader and partition table are already installed on the target. Keep the target connected and powered until the result appears. With an extension, connect it before starting PandaFlasher because extension detection runs at startup; then choose a port or **All responding ports** in the flash workflow.
+
+## 5. Releases
+
+The two boards have independently versioned firmware and separate releases. The current source versions are **PandaFlasher v2.2.0** (release tag `v2.2.0`) and **PandaExtension v1.2.0** (release tag `extension-v1.2.0`). A merged pull request from `dev` to `main` prepares releases for both versions; either version can change without the other.
 
 Each release contains two images:
 
-- `*-OTA.bin` is the application image only. Copy it to the PandaFlasher SD card to update through **Settings → Update Panda**, **Extension → Update firmware**, or the Web UI's **Settings → Firmware update** controls. The extension's first installation must be done over its own USB-C port with a full image; older extension firmware may not support OTA.
-- `*-full.bin` combines the bootloader, partition table, application, and filesystem for that device. Use it for a complete USB/serial installation with Espressif's `esptool`; it is not the image to select for an OTA update.
+- `*-OTA.bin` is the application image for an OTA update. Copy it to the SD card and choose the matching update function in PandaFlasher or the Web UI.
+- `*-full.bin` combines the bootloader, partition table, application, and filesystem for a full USB/serial installation with Espressif `esptool`.
 
-The current Flasher release contains `PandaFlasher-v2.2.0-OTA.bin` and `PandaFlasher-v2.2.0-full.bin`. The Extension release contains `PandaFlasher-Extension-v1.2.0-OTA.bin` and `PandaFlasher-Extension-v1.2.0-full.bin`. Download the image from the matching release and check the device name and image type before installing.
+The Flasher release files are `PandaFlasher-v2.2.0-OTA.bin` and `PandaFlasher-v2.2.0-full.bin`. The Extension release files are `PandaFlasher-Extension-v1.2.0-OTA.bin` and `PandaFlasher-Extension-v1.2.0-full.bin`. Install the extension's full image over its own USB-C port the first time; then its OTA update can be sent through PandaFlasher. Do not use a full image for an OTA update.
 
-## What it does
+## 6. Build both firmwares
 
-- **Flash from SD:** Lists up to 20 `.bin` files in the SD card root. Select a file and choose `0x0` for a merged image or `0x10000` for an application image built for a partition at that address. The firmware checks the ESP image header and target flash capacity, shows progress, and compares the written image with the target using MD5 before reporting success.
-- **Chip details:** Connects to the target and displays its detected chip type, revision, flash size, MAC address, and secure boot and flash encryption status when available.
-- **Read Serial:** Shows printable target UART output on the OLED and appends the raw output to `/target-log.txt` on the SD card. Select the on-screen **Back** option with the joystick to close the log and return to the menu. If the card or log write fails, `SD ERR` appears on the display; serial viewing continues.
-- **Flash log:** Each flash attempt appends the selected file, offset, loader messages, progress, and result to `/flash-log.txt` on the SD card. Flashing continues if the log cannot be written, and the result screen reports `Log unavailable`.
-- **UART Test:** Pulses the target reset line when CENTER is pressed.
-- **Software Version:** Displays the firmware version.
+Install Python and PlatformIO, then run these commands from the repository root.
 
-## Connection and use
+### PandaFlasher (ESP32-S3, hardware revision 2.0)
 
-Connect the target's **RX, TX, BOOT/IO0, EN, 3.3 V, and GND** to the matching six-pin UART connection. Use a 3.3 V ESP target and connect RX to TX in each direction. The firmware controls BOOT/IO0 and EN to enter the target's serial bootloader and reset it afterward. Target UART communication runs at 115200 baud.
+```sh
+python -m platformio run -d firmware/flasher -e HW-2_0
+```
 
-Copy an ESP firmware `.bin` file to the SD card root. Use joystick UP/DOWN to navigate and CENTER to select. Choose the on-screen **Back** option with the joystick to cancel or return; use LEFT/RIGHT to change the flash offset on the confirmation screen. Select **Flash from SD**, choose the file and correct offset, then press CENTER to start. Keep the target connected until the result appears. A standalone application image at `0x10000` also requires a compatible bootloader and partition table already on the target; a merged image at `0x0` includes those components if it was built that way.
+The application image is `firmware/flasher/.pio/build/HW-2_0/firmware.bin`. To build the Web UI filesystem too, run `python -m platformio run -d firmware/flasher -e HW-2_0 -t buildfs`. To upload over USB, run `python -m platformio run -d firmware/flasher -e HW-2_0 -t upload`.
 
-## Web UI
+### PandaExtension (ESP32-C3, rev 1)
 
-Set up Wi-Fi from **Settings → WiFi setup** on the PandaFlasher. Scan the OLED QR code to join its password-protected `Panda-xxxxxx` access point, then open `http://192.168.4.1` to enter your Wi-Fi network. Once connected, the setup access point closes. Find the LAN address in **Settings → WiFi status**, then open `http://<device-ip>` or `http://pandaflasher.local` from a device on the same network.
+```sh
+python -m platformio run -d firmware/extension -e rev1
+```
 
-The home page scans for connected ESP targets (including ports on a PandaExtension), lets you select multiple responding targets, resets them, and flashes them in sequence. Web flashing uses a merged full-flash image, erases the selected target's entire flash, and writes from address `0x0`; a standalone OTA application image is not suitable. **Filemanager** uploads and deletes `.bin` files on the SD card. **Settings** changes Wi-Fi, restarts the PandaFlasher or extension, enters deep sleep, and updates either board from its OTA image. **Info** shows the PandaFlasher version and uptime, network details, and connected extension details and version.
-
-The Web UI has no login, so anyone with access to the same network can use its controls.
-
-## Build
-
-This directory is a PlatformIO project. Build the `HW-2_0` environment with `pio run -e HW-2_0`, then upload with `pio run -e HW-2_0 -t upload`. It targets `esp32-s3-devkitc-1` with the Arduino framework, 8 MB flash, PSRAM, and the included partition layout. The display uses an SSD1306-compatible I2C driver; the SD card uses SPI. Pin assignments and the displayed version are in `src/config.h`.
-
-The firmware includes Espressif's [esp-serial-flasher](https://github.com/espressif/esp-serial-flasher) v2.1.0 (commit `57f55f51d7d9781a09f9843043aa9fa715b94654`, Apache-2.0) for target detection, flashing, and verification. See `LICENSE` for the firmware license and `lib/esp-serial-flasher/LICENSE` for the bundled library license.
-
-## Extension firmware
-
-Build the ESP32-C3 extension project with `pio run -d firmware/extension -e rev1`. See [its README](firmware/extension/README.md) for USB upload and OTA update instructions.
+The application image is `firmware/extension/.pio/build/rev1/firmware.bin`. To upload over the extension's USB-C port, run `python -m platformio run -d firmware/extension -e rev1 -t upload` (add `--upload-port <port>` if PlatformIO does not find it automatically).
