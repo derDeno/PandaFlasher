@@ -18,10 +18,10 @@ jobs:
       - name: Read firmware versions
         id: version
         run: |
-          version=$(sed -nE 's/^#define SOFTWARE_VERSION "(v[0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' flasher/src/config.h)
+          version=$(sed -nE 's/^#define SOFTWARE_VERSION "(v[0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' firmware/flasher/src/config.h)
           test -n "$version"
           echo "value=$version" >> "$GITHUB_OUTPUT"
-          extension_version=$(sed -nE 's/^constexpr char VERSION\[\] = "([0-9]+\.[0-9]+\.[0-9]+)";$/\1/p' extension/src/main.cpp)
+          extension_version=$(sed -nE 's/^constexpr char VERSION\[\] = "([0-9]+\.[0-9]+\.[0-9]+)";$/\1/p' firmware/extension/src/main.cpp)
           test -n "$extension_version"
           echo "extension=$extension_version" >> "$GITHUB_OUTPUT"
 
@@ -30,11 +30,11 @@ jobs:
 
       - name: Build firmware and filesystem
         run: |
-          pio run -d flasher -e HW-2_0
-          pio run -d flasher -e HW-2_0 -t buildfs
-          pio run -d extension -e rev1
-          mkdir -p extension/data
-          pio run -d extension -e rev1 -t buildfs
+          pio run -d firmware/flasher -e HW-2_0
+          pio run -d firmware/flasher -e HW-2_0 -t buildfs
+          pio run -d firmware/extension -e rev1
+          mkdir -p firmware/extension/data
+          pio run -d firmware/extension -e rev1 -t buildfs
 
       - name: Combine flash image
         env:
@@ -42,17 +42,17 @@ jobs:
           EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
           python -m esptool --chip esp32s3 merge-bin -o "PandaFlasher-${VERSION}-full.bin" \
-            0x0 flasher/.pio/build/HW-2_0/bootloader.bin \
-            0x8000 flasher/.pio/build/HW-2_0/partitions.bin \
+            0x0 firmware/flasher/.pio/build/HW-2_0/bootloader.bin \
+            0x8000 firmware/flasher/.pio/build/HW-2_0/partitions.bin \
             0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
-            0x10000 flasher/.pio/build/HW-2_0/firmware.bin \
-            0x5F0000 flasher/.pio/build/HW-2_0/littlefs.bin
+            0x10000 firmware/flasher/.pio/build/HW-2_0/firmware.bin \
+            0x5F0000 firmware/flasher/.pio/build/HW-2_0/littlefs.bin
           python -m esptool --chip esp32c3 merge-bin -o "PandaFlasher-Extension-v${EXTENSION_VERSION}-full.bin" \
-            0x0 extension/.pio/build/rev1/bootloader.bin \
-            0x8000 extension/.pio/build/rev1/partitions.bin \
+            0x0 firmware/extension/.pio/build/rev1/bootloader.bin \
+            0x8000 firmware/extension/.pio/build/rev1/partitions.bin \
             0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
-            0x10000 extension/.pio/build/rev1/firmware.bin \
-            0x290000 extension/.pio/build/rev1/spiffs.bin
+            0x10000 firmware/extension/.pio/build/rev1/firmware.bin \
+            0x290000 firmware/extension/.pio/build/rev1/spiffs.bin
 
       - name: Add images to versioned releases
         env:
@@ -60,8 +60,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
           EXTENSION_VERSION: ${{ steps.version.outputs.extension }}
         run: |
-          cp flasher/.pio/build/HW-2_0/firmware.bin "PandaFlasher-${VERSION}-OTA.bin"
-          cp extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}-OTA.bin"
+          cp firmware/flasher/.pio/build/HW-2_0/firmware.bin "PandaFlasher-${VERSION}-OTA.bin"
+          cp firmware/extension/.pio/build/rev1/firmware.bin "PandaFlasher-Extension-v${EXTENSION_VERSION}-OTA.bin"
           release_image() {
             tag=$1
             title=$2
