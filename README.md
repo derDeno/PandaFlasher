@@ -27,10 +27,10 @@ The Web UI provides:
 
 - **Home:** Identify connected ESP targets, select multiple responding targets, reset them, or flash them in sequence. With a PandaExtension connected, it can scan and operate its target ports too.
 - **Filemanager:** Upload and delete `.bin` files on the PandaFlasher SD card.
-- **Settings:** Change Wi-Fi, restart PandaFlasher or a connected PandaExtension, restart in Wi-Fi setup mode, enter deep sleep, and install OTA application images for either board.
+- **Settings:** Change Wi-Fi, restart PandaFlasher or a connected PandaExtension, restart in Wi-Fi setup mode, shut down PandaFlasher into deep sleep, and install OTA application images for either board.
 - **Info:** View PandaFlasher version and uptime, network details, and connected PandaExtension details and version.
 
-Web flashing erases all flash on each selected target and writes a merged full-flash image from `0x0`. The image must include the partition table at `0x8000` and application at `0x10000`; a standalone OTA application image is not suitable. The Web UI has no login, so anyone on the same network can use its controls. Deep sleep requires a power cycle to wake the device.
+Web flashing erases all flash on each selected target and writes a merged full-flash image from `0x0`. The image must include the partition table at `0x8000` and application at `0x10000`; a standalone OTA application image is not suitable. The Web UI has no login, so anyone on the same network can use its controls. PandaFlasher's deep sleep requires a power cycle to wake it.
 
 ## 4. Connections and use
 
