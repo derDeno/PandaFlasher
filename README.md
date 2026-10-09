@@ -53,14 +53,14 @@ Copy the target firmware `.bin` to the SD card root. Use joystick UP/DOWN to nav
 
 ## 5. Releases
 
-The two boards have independently versioned firmware and separate releases. The current source versions are **PandaFlasher v2.2.0** (release tag `v2.2.0`) and **PandaExtension v1.2.0** (release tag `extension-v1.2.0`). A merged pull request from `dev` to `main` prepares releases for both versions; either version can change without the other.
+PandaFlasher and PandaExtension have independently versioned firmware and separate releases. A merged pull request from `dev` to `main` prepares a release for each board; either version can change without the other. Flasher release tags use `v<major>.<minor>.<patch>`, and extension release tags use `extension-v<major>.<minor>.<patch>`.
 
 Each release contains two images:
 
 - `*-OTA.bin` is the application image for an OTA update. Copy it to the SD card and choose the matching update function in PandaFlasher or the Web UI.
 - `*-full.bin` combines the bootloader, partition table, application, and filesystem for a full USB/serial installation with Espressif `esptool`.
 
-The Flasher release files are `PandaFlasher-v2.2.0-OTA.bin` and `PandaFlasher-v2.2.0-full.bin`. The Extension release files are `PandaFlasher-Extension-v1.2.0-OTA.bin` and `PandaFlasher-Extension-v1.2.0-full.bin`. Install the extension's full image over its own USB-C port the first time; then its OTA update can be sent through PandaFlasher. Do not use a full image for an OTA update.
+Flasher release files follow `PandaFlasher-<version>-OTA.bin` and `PandaFlasher-<version>-full.bin`. Extension release files follow `PandaFlasher-Extension-v<version>-OTA.bin` and `PandaFlasher-Extension-v<version>-full.bin`. Choose the release and file matching the board you are updating. Install the extension's full image over its own USB-C port the first time; then its OTA update can be sent through PandaFlasher. Do not use a full image for an OTA update.
 
 ## 6. Build both firmwares
 
