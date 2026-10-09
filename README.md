@@ -21,7 +21,7 @@ The optional rev 1 extension selects and powers one of eight ESP target ports at
 
 ## 3. Web UI: functions and connection
 
-On PandaFlasher, choose **Settings → WiFi setup**. Use a phone or computer to scan the OLED QR code and join the password-protected `Panda-xxxxxx` access point. Open `http://192.168.4.1` and enter the Wi-Fi network credentials. After PandaFlasher joins that network, the setup access point closes. **Settings → WiFi status** shows its LAN address. From a device on the same network, open `http://<device-ip>` or `http://pandaflasher.local`. If that name is already taken, use `http://pandaflasher-xxxx.local`, where `xxxx` is the last four characters of the Wi-Fi MAC address.
+On PandaFlasher, choose **Settings → WiFi setup**. Use a phone or computer to scan the OLED QR code and join the password-protected `PandaFlasher-XXXX` access point, where `XXXX` is the last four hexadecimal characters of the Wi-Fi MAC address. You can rename the setup access point in **Web UI → Settings → Wi-Fi**. Open `http://192.168.4.1` and enter the Wi-Fi network credentials. After PandaFlasher joins that network, the setup access point closes. **Settings → WiFi status** shows its LAN address. From a device on the same network, open `http://<device-ip>` or `http://pandaflasher.local`. If that name is already taken, use `http://pandaflasher-xxxx.local`, where `xxxx` is the last four characters of the Wi-Fi MAC address.
 
 The Web UI provides:
 
