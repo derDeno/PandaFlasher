@@ -305,7 +305,7 @@ void drawExtensionUpdateProgress(uint32_t sent, uint32_t total) {
     display.display();
 }
 
-void runExtensionUpdate();
+void runExtensionUpdate(void (*progress)(uint32_t, uint32_t) = drawExtensionUpdateProgress);
 
 void confirmExtensionUpdate() {
     display.clearDisplay();
@@ -323,9 +323,9 @@ void confirmExtensionUpdate() {
     currentMenu = 13;
 }
 
-void runExtensionUpdate() {
+void runExtensionUpdate(void (*progress)(uint32_t, uint32_t)) {
     File file = SD.open("/" + sdFiles[selectedFile], FILE_READ);
-    resultText = file ? Extension::update(file, drawExtensionUpdateProgress) : "SD open failed";
+    resultText = file ? Extension::update(file, progress) : "SD open failed";
     if (file) file.close();
     if (resultText == "Update sent!") {
         delay(500);

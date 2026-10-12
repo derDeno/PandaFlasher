@@ -1,12 +1,9 @@
-#pragma once
-#include <pgmspace.h>
-// Generated from web-preview.html by embed_web.py.
-static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PandaFlasher preview</title>
+  <title>PandaFlasher</title>
   <style>
     body{font:16px system-ui;margin:0;min-height:100vh;display:flex;flex-direction:column;background:#121821;color:#eee}
     header,footer{padding:1rem max(1rem,calc((100% - 48rem)/2));background:#202b39}
@@ -52,6 +49,7 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
     #flash-progress{max-height:12rem;overflow:auto}
     .flash-target{margin:.75rem 0}
     .flash-target progress{display:block;width:100%}
+    #update-progress{display:block;width:100%;margin:1rem 0}
     #flash-log{box-sizing:border-box;width:100%;resize:vertical;background:#121821;color:#eee;border:1px solid #43536b;border-radius:.3rem;padding:.5rem;font:12px ui-monospace,monospace}
     input,select,button{font:inherit;padding:.45rem;margin:.25rem}
     button{cursor:pointer}
@@ -142,12 +140,20 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
     <h2>Firmware update</h2>
     <section>
       <h3>PandaFlasher</h3>
-      <p>Select a PandaFlasher ESP32-S3 OTA update file (.bin) from the SD card. Use an application image, not a merged image.</p>
-      <form>
-        <select id="self-file" name="file" aria-label="PandaFlasher firmware file" required>
-          <option value="panda-ota.bin">panda-ota.bin</option>
-        </select>
-        <button type="button" data-op="self">Update PandaFlasher</button>
+      <p>Select an ESP32-S3 application image (.bin), not a merged image.</p>
+      <form id="firmware-update-form">
+        <label for="firmware-update-file">Firmware image</label>
+        <input id="firmware-update-file" type="file" accept=".bin,application/octet-stream" required>
+        <button id="firmware-update-button" type="submit">Upload firmware</button>
+      </form>
+    </section>
+    <section>
+      <h3>WebUI filesystem</h3>
+      <p>Select a LittleFS image built from the firmware <code>data/</code> folder. This replaces the filesystem in place; keep the device powered until it restarts.</p>
+      <form id="filesystem-update-form">
+        <label for="filesystem-update-file">Filesystem image</label>
+        <input id="filesystem-update-file" type="file" accept=".bin,application/octet-stream" required>
+        <button id="filesystem-update-button" type="submit">Upload filesystem</button>
       </form>
     </section>
     <section id="extension-update">
@@ -218,6 +224,13 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
       <button value="flash">Flash</button>
     </form>
   </dialog>
+  <dialog id="update-dialog" aria-labelledby="update-title">
+    <h3 id="update-title">Updating device</h3>
+    <p id="update-status" role="status" aria-live="polite">Preparing update…</p>
+    <progress id="update-progress" max="100" value="0" aria-label="Update progress"></progress>
+    <pre id="update-log" hidden></pre>
+    <form method="dialog"><button id="update-close" value="close" disabled>Close</button></form>
+  </dialog>
   <footer>
     <a href="https://github.com/derDeno/PandaFlasher" target="_blank" rel="noopener noreferrer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -239,6 +252,34 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
       const notice = document.querySelector('#notice');
       notice.textContent = message;
       notice.hidden = !message;
+    }
+
+    const updateDialog = document.querySelector('#update-dialog');
+    const updateProgress = document.querySelector('#update-progress');
+    const updateStatus = document.querySelector('#update-status');
+    const updateLog = document.querySelector('#update-log');
+    const updateClose = document.querySelector('#update-close');
+    let updateBusy = false;
+    updateDialog.addEventListener('cancel', event => { if (updateBusy) event.preventDefault(); });
+
+    function beginUpdate(title) {
+      updateBusy = true;
+      document.querySelector('#update-title').textContent = title;
+      updateStatus.textContent = 'Preparing update…';
+      updateProgress.value = 0;
+      updateProgress.max = 100;
+      updateLog.hidden = true;
+      updateLog.textContent = '';
+      updateClose.disabled = true;
+      updateDialog.showModal();
+    }
+
+    function finishUpdate(message) {
+      updateBusy = false;
+      updateStatus.textContent = message;
+      updateProgress.removeAttribute('value');
+      updateClose.disabled = false;
+      updateClose.focus();
     }
 
     async function api(url, options) {
@@ -425,7 +466,7 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
         button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7"/></svg>';
         row.insertCell().append(button);
       }
-      for (const id of ['flash-file', 'self-file', 'extension-file']) {
+      for (const id of ['flash-file', 'extension-file']) {
         const select = document.getElementById(id);
         const previous = select.value;
         select.replaceChildren(...files.map(name => new Option(name, name)));
@@ -469,10 +510,89 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
       const button = event.target.closest('[data-op]');
       if (!button || !live) return;
       const op = button.dataset.op;
-      const file = op === 'self' ? document.querySelector('#self-file').value
-        : op === 'extension' ? document.querySelector('#extension-file').value : '';
+      const file = op === 'extension' ? document.querySelector('#extension-file').value : '';
+      if (op === 'extension') { updateExtension(file); return; }
       operate(op, file ? {file} : {});
     });
+
+    function uploadUpdate(event, fileId, buttonId, endpoint, title) {
+      event.preventDefault();
+      if (!live) return;
+      const file = document.querySelector(fileId).files[0];
+      if (!file) return;
+      const button = document.querySelector(buttonId);
+      button.disabled = true;
+      beginUpdate(title);
+      updateStatus.textContent = 'Uploading ' + file.name + '…';
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', endpoint);
+      xhr.setRequestHeader('X-Panda-Token', token);
+      xhr.upload.addEventListener('progress', progress => {
+        if (progress.lengthComputable) {
+          updateProgress.value = progress.total ? progress.loaded * 100 / progress.total : 0;
+          updateStatus.textContent = 'Uploading ' + file.name + ' (' + Math.round(updateProgress.value) + '%)…';
+        }
+      });
+      xhr.upload.addEventListener('load', () => {
+        updateProgress.removeAttribute('value');
+        updateStatus.textContent = 'Verifying image…';
+      });
+      xhr.addEventListener('load', () => {
+        const success = xhr.status >= 200 && xhr.status < 300;
+        finishUpdate(xhr.responseText || (success ? 'Update complete.' : 'Update failed.'));
+        if (success) event.target.reset();
+        button.disabled = false;
+      });
+      xhr.addEventListener('error', () => {
+        finishUpdate('Upload failed. Check the connection and try again.');
+        button.disabled = false;
+      });
+      const body = new FormData();
+      body.append('file', file);
+      xhr.send(body);
+    }
+
+    document.querySelector('#firmware-update-form').addEventListener('submit', event =>
+      uploadUpdate(event, '#firmware-update-file', '#firmware-update-button', '/api/update/firmware', 'PandaFlasher firmware update'));
+    document.querySelector('#filesystem-update-form').addEventListener('submit', event =>
+      uploadUpdate(event, '#filesystem-update-file', '#filesystem-update-button', '/api/update/filesystem', 'WebUI filesystem update'));
+
+    async function updateExtension(file) {
+      beginUpdate('PandaExtension firmware update');
+      updateProgress.value = 0;
+      updateStatus.textContent = 'Sending firmware to PandaExtension…';
+      updateLog.hidden = false;
+      try {
+        const response = await api('/api/action', {
+          method: 'POST', body: new URLSearchParams({token, op: 'extension', file})
+        });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = '';
+        while (true) {
+          const {value, done} = await reader.read();
+          pending += decoder.decode(value || new Uint8Array(), {stream: !done});
+          const lines = pending.split('\n');
+          pending = lines.pop();
+          for (const line of lines) {
+            if (!line) continue;
+            const update = JSON.parse(line);
+            if (update.type === 'progress') {
+              updateProgress.value = update.percent;
+              updateStatus.textContent = 'Sending firmware to PandaExtension (' + update.percent + '%)…';
+            } else if (update.type === 'log') updateLog.textContent += update.text + '\n';
+            else if (update.type === 'result') updateStatus.textContent = update.text;
+          }
+          if (done) break;
+        }
+        if (pending) {
+          const update = JSON.parse(pending);
+          if (update.type === 'result') updateStatus.textContent = update.text;
+        }
+        finishUpdate(updateStatus.textContent);
+        await loadInfo();
+      } catch (error) { finishUpdate(error.message); }
+    }
 
     document.querySelector('#ap-name-form').addEventListener('submit', async event => {
       event.preventDefault();
@@ -508,4 +628,3 @@ static const char WEB_PAGE[] PROGMEM = R"WEBUI(<!doctype html>
   </script>
 </body>
 </html>
-)WEBUI";

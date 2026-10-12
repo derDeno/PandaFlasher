@@ -3,10 +3,10 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 #include <qrcode.h>
 #include <ESPmDNS.h>
 #include <mdns.h>
-#include "webPage.h"
 
 namespace WifiWeb {
 WebServer server(80);
@@ -24,6 +24,10 @@ String uploadName, uploadError;
 bool uploadCreated = false;
 size_t uploadBytes = 0;
 bool flashStreaming = false;
+bool filesystemMounted = false;
+bool otaUploadStarted = false, otaUploadFilesystem = false, otaFilesystemUnmounted = false;
+String otaUploadError;
+size_t otaUploadBytes = 0, otaUploadTotalSize = 0;
 
 void flashEvent(const String &event) {
     if (flashStreaming) server.sendContent(event + "\n");
@@ -111,7 +115,11 @@ bool selectFile() {
 }
 
 void home() {
-    server.send_P(200, "text/html", WEB_PAGE);
+    if (!filesystemMounted) { server.send(503, "text/plain", "WebUI filesystem unavailable"); return; }
+    File page = LittleFS.open("/index.html", FILE_READ);
+    if (!page || page.isDirectory()) { server.send(503, "text/plain", "WebUI not installed"); return; }
+    server.streamFile(page, "text/html");
+    page.close();
 }
 
 String macText(const uint8_t mac[6]) {
@@ -258,6 +266,90 @@ void uploadDone() {
     uploadCreated = false;
 }
 
+void extensionWebProgress(uint32_t sent, uint32_t total) {
+    const uint32_t percent = total ? static_cast<uint32_t>((static_cast<uint64_t>(sent) * 100) / total) : 0;
+    drawExtensionUpdateProgress(sent, total);
+    flashEvent("{\"type\":\"progress\",\"percent\":" + String(percent) + "}");
+}
+
+void remountFilesystem() {
+    if (otaFilesystemUnmounted) {
+        filesystemMounted = LittleFS.begin(false);
+        otaFilesystemUnmounted = false;
+    }
+}
+
+void otaUploadChunk() {
+    HTTPUpload &part = server.upload();
+    if (part.status == UPLOAD_FILE_START) {
+        otaUploadStarted = false;
+        otaUploadFilesystem = server.uri() == "/api/update/filesystem";
+        otaFilesystemUnmounted = false;
+        otaUploadError = "";
+        otaUploadBytes = otaUploadTotalSize = 0;
+        if (server.header("X-Panda-Token") != token) otaUploadError = "Reload the page and try again";
+        else if (!validBinName(part.filename)) otaUploadError = "Select a .bin file with a simple name";
+        else {
+            if (otaUploadFilesystem && filesystemMounted) {
+                LittleFS.end();
+                filesystemMounted = false;
+                otaFilesystemUnmounted = true;
+            }
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN, otaUploadFilesystem ? U_SPIFFS : U_FLASH)) otaUploadError = Update.errorString();
+            else otaUploadStarted = true;
+        }
+    } else if (part.status == UPLOAD_FILE_WRITE && otaUploadStarted && !otaUploadError.length()) {
+        if (Update.write(part.buf, part.currentSize) != part.currentSize) {
+            otaUploadError = "OTA write failed";
+            Update.abort();
+            otaUploadStarted = false;
+        } else otaUploadBytes += part.currentSize;
+    } else if (part.status == UPLOAD_FILE_END || part.status == UPLOAD_FILE_ABORTED) {
+        otaUploadTotalSize = part.totalSize;
+        if (part.status == UPLOAD_FILE_ABORTED) otaUploadError = "Upload cancelled";
+        else if (!otaUploadBytes && !otaUploadError.length()) otaUploadError = "Empty file";
+        else if (otaUploadBytes != otaUploadTotalSize && !otaUploadError.length()) otaUploadError = "Incomplete upload";
+        if (part.status == UPLOAD_FILE_ABORTED || otaUploadError.length()) {
+            if (otaUploadStarted) Update.abort();
+            otaUploadStarted = false;
+            remountFilesystem();
+        }
+    }
+}
+
+void otaUploadDone() {
+    if (server.header("X-Panda-Token") != token) {
+        if (otaUploadStarted) Update.abort();
+        otaUploadStarted = false;
+        remountFilesystem();
+        server.send(403, "text/plain", "Reload the page and try again");
+        return;
+    }
+    if (otaUploadError.length() || !otaUploadStarted) {
+        if (otaUploadStarted) Update.abort();
+        otaUploadStarted = false;
+        remountFilesystem();
+        server.send(400, "text/plain", otaUploadError.length() ? otaUploadError : "No file received");
+        return;
+    }
+    otaUploadStarted = false;
+    if (!Update.end(true)) {
+        remountFilesystem();
+        server.send(400, "text/plain", "OTA verification failed");
+        return;
+    }
+    if (otaUploadFilesystem) {
+        filesystemMounted = LittleFS.begin(false);
+        otaFilesystemUnmounted = false;
+        if (!filesystemMounted || !LittleFS.exists("/index.html") || !LittleFS.exists("/captive.html")) {
+            server.send(400, "text/plain", "Filesystem image is invalid or missing WebUI files");
+            return;
+        }
+    }
+    server.send(200, "text/plain", otaUploadFilesystem ? "Filesystem verified. Restarting." : "Firmware verified. Restarting.");
+    restartAtMs = millis() + 1000;
+}
+
 void action() {
     if (!postAllowed()) return;
     String op = server.arg("op");
@@ -343,8 +435,17 @@ void action() {
         flashStreaming = false;
         server.sendContent("");
         return;
-    } else if (op == "self") runSelfUpdate();
-    else runExtensionUpdate();
+    } else if (op == "extension") {
+        server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+        server.send(200, "application/x-ndjson", "");
+        flashStreaming = true;
+        flashEvent("{\"type\":\"log\",\"text\":\"Updating PandaExtension\"}");
+        runExtensionUpdate(extensionWebProgress);
+        flashEvent("{\"type\":\"result\",\"text\":" + jsonString(resultText) + "}");
+        flashStreaming = false;
+        server.sendContent("");
+        return;
+    } else runSelfUpdate();
     sendResult(resultText);
 }
 
@@ -413,11 +514,30 @@ void saveApName() {
 
 void setupPage() {
     if (!portal) { home(); return; }
-    server.send(200, "text/html", pageStart("Wi-Fi setup") +
-        "<form method=post action='/save'>" + field("token", token.c_str()) +
-        "<label>Network name <input name=ssid required maxlength=32></label><br>"
-        "<label>Password <input name=password type=password maxlength=63></label><br>"
-        "<button>Connect</button></form>");
+    File page = LittleFS.open("/captive.html", FILE_READ);
+    if (!page || page.isDirectory()) { server.send(503, "text/plain", "Wi-Fi setup page unavailable"); return; }
+    String html = page.readString();
+    page.close();
+    if (!html.length() || html.indexOf("{{TOKEN}}") < 0) { server.send(503, "text/plain", "Wi-Fi setup page invalid"); return; }
+    html.replace("{{TOKEN}}", token);
+    server.send(200, "text/html", html);
+}
+
+void staticFile() {
+    if (!filesystemMounted) { server.send(503, "text/plain", "WebUI filesystem unavailable"); return; }
+    String path = server.uri();
+    if (path.indexOf("..") >= 0 || path.indexOf('\\') >= 0) { server.send(400, "text/plain", "Invalid path"); return; }
+    if (path == "/") path = "/index.html";
+    File file = LittleFS.open(path, FILE_READ);
+    if (!file || file.isDirectory()) { server.send(404, "text/plain", "Not found"); return; }
+    String type = "application/octet-stream";
+    if (path.endsWith(".html")) type = "text/html";
+    else if (path.endsWith(".css")) type = "text/css";
+    else if (path.endsWith(".js")) type = "application/javascript";
+    else if (path.endsWith(".svg")) type = "image/svg+xml";
+    else if (path.endsWith(".png")) type = "image/png";
+    server.streamFile(file, type);
+    file.close();
 }
 
 void drawQr(esp_qrcode_handle_t qr) {
@@ -471,6 +591,7 @@ void startSetup() {
 }
 
 void begin() {
+    filesystemMounted = LittleFS.begin(false);
     uint64_t mac = ESP.getEfuseMac();
     char suffix[5];
     snprintf(suffix, sizeof(suffix), "%04lX", static_cast<unsigned long>(mac & 0xffff));
@@ -499,6 +620,7 @@ void begin() {
     const char *headers[] = {"X-Panda-Token"};
     server.collectHeaders(headers, 1);
     server.on("/", HTTP_GET, setupPage);
+    server.onNotFound(staticFile);
     server.on("/save", HTTP_POST, saveWifi);
     server.on("/api/ap-name", HTTP_POST, saveApName);
     server.on("/action", HTTP_POST, action);
@@ -507,6 +629,8 @@ void begin() {
     server.on("/api/identify", HTTP_GET, identify);
     server.on("/api/action", HTTP_POST, action);
     server.on("/api/upload", HTTP_POST, uploadDone, uploadChunk);
+    server.on("/api/update/firmware", HTTP_POST, otaUploadDone, otaUploadChunk);
+    server.on("/api/update/filesystem", HTTP_POST, otaUploadDone, otaUploadChunk);
     server.on("/serial", HTTP_GET, serialPage);
     server.on("/serial-data", HTTP_GET, serialData);
     server.on("/serial-stop", HTTP_GET, stopSerial);
